@@ -1,9 +1,10 @@
-import os
+import logging
+logging.basicConfig(format='%(asctime)s | %(levelname)s : %(message)s', level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 import tensorflow as tf
-import numpy as np
 from tensorflow.keras.layers import Dense, Conv2D, UpSampling2D, MaxPooling2D, Dropout, concatenate
-from preprocess import read_image
-from skimage.io import imsave
+
 
 
 class Unet(object):
@@ -69,81 +70,3 @@ class Unet(object):
 
 
 
-def train(model, train_image, train_labels, train_step, sess_, batch_size=3):
-
-    ind = np.arange(0, train_labels.shape[0])
-    np.random.shuffle(ind)
-    inputs = train_image[ind]
-    labels = train_labels[ind]
-
-    for i in range(0, train_labels.shape[0], batch_size):
-        input_ = inputs[i: i + batch_size, :, :, :]
-        label = labels[i: i + batch_size, :]
-
-        sess_.run(train_step, feed_dict={model.x_: input_, model.y_: label})
-
-
-def evaluate(model, test_image, test_label, output, sess_, epoch):
-
-    if not os.path.exists(f'./results/{epoch}'):
-        os.mkdir(f'./results/{epoch}')
-    ind = np.arange(0, test_label.shape[0])
-    np.random.shuffle(ind)
-    inputs = test_image
-    labels = test_label
-
-    tp = tn = fp = fn = 0
-    image_list = []
-    for label, input in zip(labels, inputs):
-
-        image = sess_.run(output, feed_dict={model.x_: np.expand_dims(input, 0)})
-
-        image[image > 0.25] = 1.0
-        image[image < 0.25] = 0.0
-
-        image = image.astype(np.bool).astype(np.uint8)
-        lbl = label.astype(np.bool).astype(np.uint8)
-
-        tp += np.sum(np.logical_and(image == 1, lbl == 1))
-        tn += np.sum(np.logical_and(image == 0, lbl == 0))
-        fp += np.sum(np.logical_and(image == 1, lbl == 0))
-        fn += np.sum(np.logical_and(image == 0, lbl == 1))
-
-        to_save = (np.hstack((image[0], label)) * 255).astype(np.uint8)
-
-        image_list.append(to_save)
-
-    for i, image in enumerate(image_list):
-        imsave(f'./results/{epoch}/{i}.jpg', image)
-
-    dice = (2 * tp) / (2 * tp + fp + fn)
-    accuracy = (tp + tn) / (fp + fn + tp + tn)
-
-    return dice, accuracy
-
-
-def main():
-
-    tf.compat.v2.random.set_seed(1020202)
-    sess = tf.Session()
-
-    model = Unet()
-
-    logits, output = model.get_logits_and_segmentation()
-    loss = model.get_loss(logits)
-    train_step = model.get_train_step(loss)
-
-    sess.run(tf.global_variables_initializer())
-
-
-    train_inputs_, train_labels_ = read_image('./PH2Dataset/PH2Dataset/PH2Datasetimages')
-
-    epochs = 1000
-    for epoch in range(1, epochs):
-        train(model, train_inputs_, train_labels_, train_step, sess, batch_size=3)
-        dice, accuracy = evaluate(model, train_inputs_, train_labels_, output, sess, epoch)
-        print(f'Epoch: {epoch}, Dice: {dice: .3f}, Accuracy: {accuracy: .3f}')
-
-
-if __name__ == '__main__':
-    main()

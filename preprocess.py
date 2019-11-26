@@ -49,9 +49,9 @@ def read_image(path):
     image_list = list()
     gt_list = list()
 
-    for dir in dir_list:
-        raw_image = imread(os.path.join(path, dir, f'{dir}_Dermoscopic_Image', f'{dir}.bmp'))
-        gt = imread(os.path.join(path, dir, f'{dir}_lesion', f'{dir}_lesion.bmp'))
+    for d in dir_list:
+        raw_image = imread(os.path.join(path, d, '{}_Dermoscopic_Image'.format(d), '{}.bmp'.format(d)))
+        gt = imread(os.path.join(path, d, '{}_lesion'.format(d), '{}_lesion.bmp'.format(d)))
 
         raw_image = resize(raw_image, [256, 256, 3])
         image = transform_to_SAB(raw_image)
