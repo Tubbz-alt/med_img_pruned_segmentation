@@ -28,7 +28,7 @@ parser.add_argument('--config', dest='config_filepath',
 parser.add_argument('--output_dir', default=os.getcwd(),
                     help='Root output directory. Must exist. Time-stamped directories will be created inside.')
 parser.add_argument('--data_dir', default='./PH2Dataset/PH2Dataset/PH2Datasetimages',
-                    help='Output directory')
+                    help='Data directory')
 parser.add_argument('--debug_size', type=int,
                     help='For rapid testing purposes (e.g. debugging), limit training set to a small random sample')
 parser.add_argument('--name', dest='experiment_name', default='',
