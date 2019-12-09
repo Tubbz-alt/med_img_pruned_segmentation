@@ -141,7 +141,7 @@ def main():
     tf.random.set_seed(1020202)
     model = Model()
     full_image = True
-    train_iterator, num_train_steps, test_iterator, num_test_steps = read_image('./PH2Dataset/PH2Dataset/PH2Datasetimages', size=256, full_image=full_image)
+    train_iterator, num_train_steps, test_iterator, num_test_steps = read_image('./../PH2Dataset/PH2Dataset/PH2Datasetimages', size=256, full_image=full_image)
     ## You can add different data augmentations in the read_image function when making the image generator. (https://www.tensorflow.org/api_docs/python/tf/keras/preprocessing/image/ImageDataGenerator#__init__)
 
     epochs = 100
