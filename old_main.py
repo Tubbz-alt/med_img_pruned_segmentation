@@ -18,8 +18,8 @@ import json
 from datetime import datetime
 import traceback
 
-from model import Unet
-from preprocess import read_image
+from old_model import Unet
+from old_preprocess import read_image
 
 # Handle command line arguments
 parser = argparse.ArgumentParser(description='Run a complete training pipeline based on a given configuration file')

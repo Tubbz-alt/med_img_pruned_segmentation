@@ -8,6 +8,9 @@ import model_config as config
 from tqdm import tqdm
 
 
+data_dir = '/users/gzerveas/data/gzerveas/PH2Dataset/images'
+output_dir = '/users/gzerveas/data/gzerveas/pruned_med_img_seg/output'
+
 class Model(tf.keras.Model):
     def __init__(self):
 
@@ -86,7 +89,7 @@ def train(model, train_iterator, num_steps, mask_):
             break
 
 
-def attach_tiles(tiles, num_images):
+def assemble_tiles(tiles, num_images):
     images = []
     for i in range(num_images):
         up = np.hstack(tiles[i * 4:i * 4 + 2])
@@ -94,9 +97,12 @@ def attach_tiles(tiles, num_images):
         images.append(np.vstack((up, down)))
     return images
 
+
 def evaluate(model, test_iterator, num_steps, full_image, epoch):
-    if not os.path.exists(f'./results/{epoch}'):
-        os.mkdir(f'./results/{epoch}')
+
+    out_dir = os.path.join(output_dir, "epoch_{}".format(epoch))
+    if not os.path.exists(out_dir):
+        os.makedirs(out_dir)
 
     tp = tn = fp = fn = 0
     steps_taken = 0
@@ -120,15 +126,15 @@ def evaluate(model, test_iterator, num_steps, full_image, epoch):
         fn += np.sum(np.logical_and(image == 0, lbl == 1))
 
         if not full_image:
-            image = attach_tiles(image, 20)
-            lbl = attach_tiles(lbl, 20)
+            image = assemble_tiles(image, 20)
+            lbl = assemble_tiles(lbl, 20)
 
         if steps_taken >= num_steps:
             break
 
     for i, (image, label) in enumerate(zip(image, lbl)):
         image_to_save = (np.hstack((image, label)) * 255).astype(np.uint8)
-        imsave(f'./results/{epoch}/{i}.jpg', image_to_save)
+        imsave(os.path.join(output_dir, "{}.jpg".format(epoch)), image_to_save)
 
     dice = (2 * tp) / (2 * tp + fp + fn)
     accuracy = (tp + tn) / (fp + fn + tp + tn)
@@ -141,7 +147,7 @@ def main():
     tf.random.set_seed(1020202)
     model = Model()
     full_image = True
-    train_iterator, num_train_steps, test_iterator, num_test_steps = read_image('./../PH2Dataset/PH2Dataset/PH2Datasetimages', size=256, full_image=full_image)
+    train_iterator, num_train_steps, test_iterator, num_test_steps = read_image(data_dir, size=256, full_image=full_image)
     ## You can add different data augmentations in the read_image function when making the image generator. (https://www.tensorflow.org/api_docs/python/tf/keras/preprocessing/image/ImageDataGenerator#__init__)
 
     epochs = 100
@@ -158,11 +164,10 @@ def main():
 
         train(model, train_iterator, num_train_steps, layers_mask)
 
-        if (epoch - back_up_distance) in epochs_to_prune:
+        if (epoch + back_up_distance) in epochs_to_prune:
             model.take_back_up()
 
         if epoch in epochs_to_prune:
-            model.take_back_up()
             layers_mask = model.compute_mask(config.prune_layers, 0.5)
             model.prune_connections(layers_mask)
             latest_pruning = epoch
