@@ -4,9 +4,7 @@ from skimage.color import rgb2lab, rgb2hsv
 from sklearn.feature_extraction.image import extract_patches_2d
 import os
 import time
-from random import shuffle
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
-import model_config as config
 from skimage.transform import resize
 from tqdm import tqdm
 
@@ -48,78 +46,71 @@ def transform_to_SAB(image):
     return transformed
 
 
-def read_image(path, size, full_image):
+def read_images(path, image_size, testset_ratio, train_batch_size, use_patches):
+
     dir_list = os.listdir(path)
+    testset_size = int(testset_ratio*len(dir_list)) # each directory corresponds to a single sample
 
-
-    image_size = size
     p_size = int(image_size / 2)
     assert p_size * 2 == image_size
     patch_per_image = 2
 
-    train_image_patch_list = list()
-    train_gt_pathc_list = list()
+    train_images = list()
+    train_label_masks = list()
 
-    test_image_patch_list = list()
-    test_gt_pathc_list = list()
+    test_images = list()
+    test_label_masks = list()
 
-    shuffle(dir_list)
+    prng = np.random.RandomState(1337)  # pseudo-random number generator
+    prng.shuffle(dir_list)
 
-    it = tqdm(enumerate(dir_list), desc='Pre processing', total=len(dir_list))
-    for ind, dir in it:
-        raw_image = imread(os.path.join(path, dir, f'{dir}_Dermoscopic_Image', f'{dir}.bmp'))
-        gt = imread(os.path.join(path, dir, f'{dir}_lesion', f'{dir}_lesion.bmp'))
+    it = tqdm(enumerate(dir_list), desc='Preprocessing', total=len(dir_list))
+    for ind, directory in it:
+        raw_image = imread(os.path.join(path, directory, f'{directory}_Dermoscopic_Image', f'{directory}.bmp'))
+        label_mask = imread(os.path.join(path, directory, f'{directory}_lesion', f'{directory}_lesion.bmp'))
 
         raw_image = resize(raw_image, [image_size, image_size, 3])
-        gt = resize(gt, [image_size, image_size, 1])
+        label_mask = resize(label_mask, [image_size, image_size, 1])
 
         image = transform_to_SAB(raw_image)
-        gt = gt.astype(np.bool).astype(np.uint8)
-        if not full_image:
-            if ind >= 20:
+        label_mask = label_mask.astype(np.bool).astype(np.uint8)
+        if use_patches:
+            if ind >= testset_size:
                 randint = int(time.time())
                 image_patches = extract_patches_2d(image, (p_size, p_size), max_patches=patch_per_image, random_state=randint)
-                gt_patches = extract_patches_2d(gt, (p_size, p_size), max_patches=patch_per_image, random_state=randint)
-                gt_patches = np.expand_dims(gt_patches, -1)
+                label_mask_patches = extract_patches_2d(label_mask, (p_size, p_size), max_patches=patch_per_image, random_state=randint)
+                label_mask_patches = np.expand_dims(label_mask_patches, -1)
 
-
-                train_image_patch_list.append(image_patches)
-                train_gt_pathc_list.append(gt_patches)
+                train_images.append(image_patches)
+                train_label_masks.append(label_mask_patches)
             else:
                 img2 = image.reshape([1] + list(image.shape))
-                gt2 = gt.reshape([1] + list(gt.shape))
+                label_mask2 = label_mask.reshape([1] + list(label_mask.shape))
                 for i in range(2):
                     for j in range(2):
 
-                        test_image_patch_list.append(img2[:, i * p_size: (i + 1) * p_size, j * p_size: (j + 1) * p_size, :])
-                        test_gt_pathc_list.append(gt2[:, i * p_size: (i + 1) * p_size, j * p_size: (j + 1) * p_size, :])
+                        test_images.append(img2[:, i * p_size: (i + 1) * p_size, j * p_size: (j + 1) * p_size, :])
+                        test_label_masks.append(label_mask2[:, i * p_size: (i + 1) * p_size, j * p_size: (j + 1) * p_size, :])
         else:
-            if ind >= 20:
-                train_image_patch_list.append(image.reshape([1] + list(image.shape)))
-                train_gt_pathc_list.append(gt.reshape([1] + list(gt.shape)))
+            if ind >= testset_size:
+                train_images.append(image.reshape([1] + list(image.shape)))
+                train_label_masks.append(label_mask.reshape([1] + list(label_mask.shape)))
             else:
-                test_image_patch_list.append(image.reshape([1] + list(image.shape)))
-                test_gt_pathc_list.append(gt.reshape([1] + list(gt.shape)))
+                test_images.append(image.reshape([1] + list(image.shape)))
+                test_label_masks.append(label_mask.reshape([1] + list(label_mask.shape)))
+
+    train_images = np.concatenate(train_images, 0)
+    train_label_masks = np.concatenate(train_label_masks, 0)
+
+    test_images = np.concatenate(test_images, 0)
+    test_label_masks = np.concatenate(test_label_masks, 0)
+
+    return train_images, train_label_masks, test_images, test_label_masks
 
 
-    train_image_patch_list = np.concatenate(train_image_patch_list, 0)
-    train_gt_pathc_list = np.concatenate(train_gt_pathc_list, 0)
+def build_iterator(images, label_masks, batch_size, shuffle, **kwargs):
 
-    test_image_patch_list = np.concatenate(test_image_patch_list, 0)
-    test_gt_pathc_list = np.concatenate(test_gt_pathc_list, 0)
+    data_gen = ImageDataGenerator(**kwargs)
+    iterator = data_gen.flow(images, label_masks, batch_size=batch_size, shuffle=shuffle)
 
-    num_test = test_gt_pathc_list.shape[0]
-
-    train_data_gen = ImageDataGenerator()
-
-
-    test_data_gen = ImageDataGenerator()
-
-    config.eval_batch_size = num_test
-    test_iterator = test_data_gen.flow(test_image_patch_list, test_gt_pathc_list, batch_size=num_test, shuffle=False)
-    train_iterator = train_data_gen.flow(train_image_patch_list, train_gt_pathc_list, batch_size=config.batch_size, shuffle=True)
-
-    num_train_steps = train_gt_pathc_list.shape[0] / config.batch_size
-    num_test_steps = num_test
-
-    return train_iterator, num_train_steps, test_iterator, num_test_steps
+    return iterator

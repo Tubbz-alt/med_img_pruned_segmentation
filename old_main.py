@@ -108,6 +108,8 @@ def setup(args):
 
     # Create output directory
     initial_timestamp = datetime.now()
+
+
     output_dir = config['output_dir']
     if not os.path.isdir(output_dir):
         raise IOError(
@@ -115,8 +117,10 @@ def setup(args):
 
     output_dir = os.path.join(output_dir, config['experiment_name'])
 
+    formatted_timestamp = initial_timestamp.strftime("%Y-%m-%d_%H-%M-%S")
+    config['initial_timestamp'] = formatted_timestamp
     if not config['no_timestamp'] or len(config['experiment_name']) == 0:
-        output_dir += "_" + initial_timestamp.strftime("%Y-%m-%d_%H-%M-%S")
+        output_dir += "_" + formatted_timestamp
     create_dirs([output_dir])
 
     # Save configuration as a (pretty) json file
