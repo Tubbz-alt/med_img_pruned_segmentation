@@ -99,8 +99,3 @@ prune_layers = list()
 for layer in layers:
     if 'conv' in layer.name:
         prune_layers.append(layer.name)
-
-
-batch_size = 10
-eval_batch_size = 1
-use_patch = True

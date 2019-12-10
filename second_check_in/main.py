@@ -23,6 +23,7 @@ from datetime import datetime
 import time
 import traceback
 import argparse
+import warnings
 
 
 # Handle command line arguments
@@ -44,6 +45,8 @@ parser.add_argument('--records_file', default='/users/gzerveas/data/gzerveas/pru
 
 parser.add_argument('--epochs', type=int, default=100,
                     help='Number of training epochs')
+parser.add_argument('--batch_size', type=int, default=10,
+                    help='Training batch size')
 parser.add_argument('--use_patches', action='store_true',
                     help='If set, training will use patches instead of full images')
 parser.add_argument('--epochs_to_prune', nargs='+', type=int,
@@ -69,6 +72,7 @@ class Model(tf.keras.Model):
         self.init_values = list()
         self.num_trainable_variables = len(self.trainable_variables)
 
+    @tf.function
     def call(self, inputs):
 
         prev = inputs
@@ -136,12 +140,13 @@ def train(model, train_iterator, num_steps, mask_):
 
 
 def assemble_tiles(tiles, num_images):
+    """Assembles the 4 tiles/patches corresponding to an image, into a single image."""
     images = []
     for i in range(num_images):
         up = np.hstack(tiles[i * 4:i * 4 + 2])
         down = np.hstack(tiles[i * 4 + 2:(i + 1) * 4])
         images.append(np.vstack((up, down)))
-    return images
+    return np.array(images)
 
 
 def evaluate(model, test_iterator, num_batches, use_patches, epoch, out_dir):
@@ -171,23 +176,16 @@ def evaluate(model, test_iterator, num_batches, use_patches, epoch, out_dir):
         fn += np.sum(np.logical_and(image == 0, lbl == 1))
 
         if use_patches:
-            image = assemble_tiles(image, batch_size)
-            lbl = assemble_tiles(lbl, batch_size)
+            image = assemble_tiles(image, int(batch_size/4))  # (set_size, 256, 256)
+            lbl = assemble_tiles(lbl, int(batch_size/4))  # (set_size, 256, 256)
 
-        all_output_masks.append(image)
-        all_label_masks.append(lbl)
+        all_output_masks.append(image)  # extends list
+        all_label_masks.append(lbl)  # extends list
 
         if batches_processed >= num_batches:
             break
 
-    for i, (image, label) in enumerate(zip(all_output_masks, all_label_masks)):
-        image_to_save = (np.hstack((image, label)) * 255).astype(np.uint8)
-
-        out_dir = os.path.join(out_dir, "sample_{}".format(i))
-        if not os.path.exists(out_dir):
-            os.makedirs(out_dir)
-
-        imsave(os.path.join(out_dir, "sample_{}_epoch_{}.jpg".format(i, epoch)), image_to_save)
+    save_mask_images(all_output_masks, all_label_masks, out_dir, epoch)
 
     dice = (2 * tp) / (2 * tp + fp + fn)
     accuracy = (tp + tn) / (fp + fn + tp + tn)
@@ -195,6 +193,27 @@ def evaluate(model, test_iterator, num_batches, use_patches, epoch, out_dir):
     recall = tp / (fn + tp)
 
     return dice, accuracy, precision, recall
+
+
+def save_mask_images(pred_masks, lbl_masks, out_dir, epoch):
+
+    pred_masks = np.concatenate(pred_masks)
+    lbl_masks = np.concatenate(lbl_masks)
+
+    for i, (image, label) in enumerate(zip(pred_masks, lbl_masks)):
+        pred_img = (image * 255).astype(np.uint8)
+        lbl_img = (label * 255).astype(np.uint8)
+
+        directory = os.path.join(out_dir, "sample_{}".format(i))
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+
+        with warnings.catch_warnings():  # stop complaining about low contrast
+            warnings.simplefilter("ignore")
+            imsave(os.path.join(directory, "pred_{}_epoch_{}.jpg".format(i, epoch)), pred_img)
+            imsave(os.path.join(directory, "lbl_{}_epoch_{}.jpg".format(i, epoch)), lbl_img)
+            # Save as side-by-side panels
+            imsave(os.path.join(directory, "both_{}_epoch_{}.jpg".format(i, epoch)), np.hstack((pred_img, lbl_img)))
 
 
 def setup(args):
@@ -275,7 +294,7 @@ def export_performance_metrics(filepath, metrics_table, header, sheet_name="metr
 
     book = xlwt.Workbook()  # excel work book
 
-    book = write_table_to_sheet(header + metrics_table, book, sheet_name=sheet_name)
+    book = write_table_to_sheet([header] + metrics_table, book, sheet_name=sheet_name)
 
     book.save(filepath)
     logger.info("Exported per epoch performance metrics in '{}'".format(filepath))
@@ -304,7 +323,7 @@ def write_table_to_sheet(table, work_book, sheet_name=None):
 
 
 def export_record(filepath, values):
-    """Adds the best and final metrics of this experiment as a record in an excel sheet with other experiment records"""
+    """Adds the best and final metrics of this experiment as a record in an excel sheet with other experiment records."""
 
     read_book = xlrd.open_workbook(filepath, formatting_info=True)
     read_sheet = read_book.sheet_by_index(0)
@@ -327,7 +346,18 @@ def main():
     tf.random.set_seed(1020202)
     model = Model(model_config.layers)
 
+    logger.info("Loading and preprocessing data ...")
     train_images, train_labels, test_images, test_labels = preprocess.read_images(config["data_dir"], image_size=256, testset_ratio=0.1, use_patches=config["use_patches"])
+
+    if config["debug_size"]:
+        train_images = train_images[:config["debug_size"], :, :, :]
+        train_labels = train_labels[:config["debug_size"], :, :, :]
+
+    logger.info("Train images shape: {}".format(train_images.shape))
+    logger.info("Train label masks shape: {}".format(train_labels.shape))
+
+    logger.info("Test images shape: {}".format(test_images.shape))
+    logger.info("Test label masks shape: {}".format(test_labels.shape))
 
     num_test_samples = test_labels.shape[0]  # number of test samples (can be whole images or patches)
     num_train_samples = train_labels.shape[0]  # number of train samples (can be whole images or patches)
@@ -340,8 +370,8 @@ def main():
     epochs_to_prune = config["epochs_to_prune"]
     backup_distance = config["backup_distance"]
 
-    max_dice = 0
-    max_acc = 0
+    # initialize loop variables
+    max_dice = max_acc = max_prec = max_rec = 0
     total_model_size = total_count_nonzero_mask = 1
     layers_mask = None
     latest_pruning = -1
@@ -357,7 +387,7 @@ def main():
             model.take_back_up()
 
         if epoch in epochs_to_prune:
-            layers_mask = model.compute_mask(config.prune_layers, 0.5)
+            layers_mask = model.compute_mask(model_config.prune_layers, 0.5)
             model.prune_connections(layers_mask)
             latest_pruning = epoch
             print(f'max dice before pruning: {max_dice}')
@@ -368,8 +398,8 @@ def main():
             total_model_size = 0
             for var, mask in zip(model.trainable_variables, layers_mask):
                 if 'conv' in var.name:
-                    total_model_size += tf.size(var)
-                    total_count_nonzero += tf.math.count_nonzero(var)
+                    total_model_size += tf.size(var).numpy()
+                    total_count_nonzero += tf.math.count_nonzero(var).numpy()
                     total_count_nonzero_mask += np.count_nonzero(mask)
             assert total_count_nonzero == total_count_nonzero_mask
 
@@ -397,7 +427,7 @@ def main():
     # Export evolution of metrics over epoch
     header = ["Epoch", "Accuracy", "DICE", "Precision", "Recall", "Pruned ratio"]
     metrics_filepath = os.path.join(config["output_dir"], "metrics.xls")
-    export_performance_metrics(metrics_filepath, metrics, header)
+    export_performance_metrics(metrics_filepath, metrics, header, sheet_name=config["experiment_name"])
 
     # Export record metrics to a file accumulating records from all experiments
     metrics = np.array(metrics)
@@ -415,7 +445,7 @@ def main():
         header = ["Timestamp", "Name", "BEST DICE", "Epoch at BEST", "PrunedR at BEST", "Final DICE", "Final Pruned Ratio", "Final Epoch",
                   "Best Accuracy", "Final Accuracy", "Best Precision", "Final Precision", "Best Recall", "Final Recall"]
         book = xlwt.Workbook()  # excel work book
-        book = write_table_to_sheet(header + row_values, book, sheet_name="records")
+        book = write_table_to_sheet([header, row_values], book, sheet_name="records")
         book.save(config["records_file"])
     else:
         export_record(config["records_file"], row_values)

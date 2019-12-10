@@ -46,7 +46,7 @@ def transform_to_SAB(image):
     return transformed
 
 
-def read_images(path, image_size, testset_ratio, train_batch_size, use_patches):
+def read_images(path, image_size, testset_ratio, use_patches):
 
     dir_list = os.listdir(path)
     testset_size = int(testset_ratio*len(dir_list)) # each directory corresponds to a single sample
