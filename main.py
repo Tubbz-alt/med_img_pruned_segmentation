@@ -427,8 +427,8 @@ def main():
 
     # Export evolution of metrics over epoch
     header = ["Epoch", "Accuracy", "DICE", "Precision", "Recall", "Pruned ratio"]
-    metrics_filepath = os.path.join(config["output_dir"], "metrics.xls")
-    export_performance_metrics(metrics_filepath, metrics, header, sheet_name=config["experiment_name"])
+    metrics_filepath = os.path.join(config["output_dir"], "metrics_" + config["experiment_name"] + ".xls")
+    export_performance_metrics(metrics_filepath, metrics, header)
 
     # Export record metrics to a file accumulating records from all experiments
     metrics = np.array(metrics)
@@ -449,7 +449,12 @@ def main():
         book = write_table_to_sheet([header, row_values], book, sheet_name="records")
         book.save(config["records_file"])
     else:
-        export_record(config["records_file"], row_values)
+        try:
+            export_record(config["records_file"], row_values)
+        except:
+            alt_path = os.path.join(os.path.dirname(config["records_file"]), "record_" + config["experiment_name"])
+            logger.error("Failed saving in: '{}'! Will save here instead: {}".format(config["records_file"], alt_path))
+            export_record(alt_path, row_values)
 
 
     logger.info('All Done!')
