@@ -49,15 +49,17 @@ parser.add_argument('--batch_size', type=int, default=10,
                     help='Training batch size')
 parser.add_argument('--use_patches', action='store_true',
                     help='If set, training will use patches instead of full images')
-parser.add_argument('--epochs_to_prune', nargs='+', type=int,
+parser.add_argument('--prune_at', nargs='+', type=int,
                     help="Space separated values that correspond to the epochs at which pruning will occur")
 parser.add_argument('--backup_distance', type=int, default=1,
                     help='Number of training epochs before pruning epoch from which to initialize weights')
+parser.add_argument('--prune_param', type=float, default=0.5,
+                    help='Pruning parameter which, multiplied by the weight matrix std, gives the pruning threshold')
 
 args = parser.parse_args()
 
-if args.epochs_to_prune is None:
-    args.epochs_to_prune = [50]
+if args.prune_at is None:
+    args.prune_at = [50]
 
 
 class Model(tf.keras.Model):
@@ -68,7 +70,6 @@ class Model(tf.keras.Model):
         self.layers_list = layers_list
         self.loss_op = tf.keras.losses.BinaryCrossentropy()
         self.optimizer = tf.keras.optimizers.Adam(1e-4)
-        self.batch_size = 3
         self.init_values = list()
         self.num_trainable_variables = len(self.trainable_variables)
 
@@ -367,7 +368,7 @@ def main():
     train_iterator = preprocess.build_iterator(train_images, train_labels, config["batch_size"], shuffle=True)
     test_iterator = preprocess.build_iterator(test_images, test_labels, num_test_samples, shuffle=False)
 
-    epochs_to_prune = config["epochs_to_prune"]
+    prune_at = config["prune_at"]
     backup_distance = config["backup_distance"]
 
     # initialize loop variables
@@ -383,11 +384,11 @@ def main():
 
         train(model, train_iterator, num_train_batches, layers_mask)
 
-        if (epoch + backup_distance) in epochs_to_prune:
+        if (epoch + backup_distance) in prune_at:
             model.take_back_up()
 
-        if epoch in epochs_to_prune:
-            layers_mask = model.compute_mask(model_config.prune_layers, 0.5)
+        if epoch in prune_at:
+            layers_mask = model.compute_mask(model_config.prune_layers, config["prune_param"])
             model.prune_connections(layers_mask)
             latest_pruning = epoch
             print(f'max dice before pruning: {max_dice}')
@@ -437,7 +438,7 @@ def main():
                   metrics[best_inds[1], 1],  metrics[-1, 1],  metrics[best_inds[3], 3], metrics[-1, 3],
                   metrics[best_inds[4], 4], metrics[-1, 4]]
 
-    if not os.path.exists(config["records_file"]): # Create a records file for the first time
+    if not os.path.exists(config["records_file"]):  # Create a records file for the first time
         logger.warning("Records file '{}' does not exist! Creating new file ...")
         directory = os.path.dirname(config["records_file"])
         if not os.path.exists(directory):
