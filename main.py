@@ -55,6 +55,10 @@ parser.add_argument('--backup_distance', type=int, default=1,
                     help='Number of training epochs before pruning epoch from which to initialize weights')
 parser.add_argument('--prune_param', type=float, default=0.5,
                     help='Pruning parameter which, multiplied by the weight matrix std, gives the pruning threshold')
+parser.add_argument('--img_size', type=int, default=128,
+                    help='Final size of training images (after downsampling)')
+parser.add_argument('--seed', type=int, default=1337,
+                    help='Seed used for splitting sets')
 
 args = parser.parse_args()
 
@@ -177,8 +181,8 @@ def evaluate(model, test_iterator, num_batches, use_patches, epoch, out_dir):
         fn += np.sum(np.logical_and(image == 0, lbl == 1))
 
         if use_patches:
-            image = assemble_tiles(image, int(batch_size/4))  # (set_size, 256, 256)
-            lbl = assemble_tiles(lbl, int(batch_size/4))  # (set_size, 256, 256)
+            image = assemble_tiles(image, int(batch_size/4))  # (set_size, img_size, img_size)
+            lbl = assemble_tiles(lbl, int(batch_size/4))  # (set_size, img_size, img_size)
 
         all_output_masks.append(image)  # extends list
         all_label_masks.append(lbl)  # extends list
@@ -348,7 +352,11 @@ def main():
     model = Model(model_config.layers)
 
     logger.info("Loading and preprocessing data ...")
-    train_images, train_labels, test_images, test_labels = preprocess.read_images(config["data_dir"], image_size=256, testset_ratio=0.1, use_patches=config["use_patches"])
+    train_images, train_labels, test_images, test_labels = preprocess.read_images(config["data_dir"],
+                                                                                  image_size=config["img_size"],
+                                                                                  testset_ratio=0.1,
+                                                                                  use_patches=config["use_patches"],
+                                                                                  seed=config["seed"])
 
     if config["debug_size"]:
         train_images = train_images[:config["debug_size"], :, :, :]

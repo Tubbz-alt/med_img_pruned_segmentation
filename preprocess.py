@@ -46,7 +46,7 @@ def transform_to_SAB(image):
     return transformed
 
 
-def read_images(path, image_size, testset_ratio, use_patches):
+def read_images(path, image_size, testset_ratio, use_patches, seed):
 
     dir_list = os.listdir(path)
     testset_size = int(testset_ratio*len(dir_list)) # each directory corresponds to a single sample
@@ -61,7 +61,7 @@ def read_images(path, image_size, testset_ratio, use_patches):
     test_images = list()
     test_label_masks = list()
 
-    prng = np.random.RandomState(1337)  # pseudo-random number generator
+    prng = np.random.RandomState(seed)  # pseudo-random number generator
     prng.shuffle(dir_list)
 
     it = tqdm(enumerate(dir_list), desc='Preprocessing', total=len(dir_list))
