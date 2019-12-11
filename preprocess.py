@@ -104,8 +104,9 @@ def read_images(path, image_size, testset_ratio, use_patches, seed):
 
     test_images = np.concatenate(test_images, 0)
     test_label_masks = np.concatenate(test_label_masks, 0)
+    test_IDs = dir_list[:testset_size]
 
-    return train_images, train_label_masks, test_images, test_label_masks
+    return train_images, train_label_masks, test_images, test_label_masks, test_IDs
 
 
 def build_iterator(images, label_masks, batch_size, shuffle, **kwargs):

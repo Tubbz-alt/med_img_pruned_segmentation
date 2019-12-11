@@ -154,7 +154,7 @@ def assemble_tiles(tiles, num_images):
     return np.array(images)
 
 
-def evaluate(model, test_iterator, num_batches, use_patches, epoch, out_dir):
+def evaluate(model, test_iterator, num_batches, use_patches, epoch, out_dir, test_IDs):
 
     tp = tn = fp = fn = 0
     batches_processed = 0
@@ -190,7 +190,7 @@ def evaluate(model, test_iterator, num_batches, use_patches, epoch, out_dir):
         if batches_processed >= num_batches:
             break
 
-    save_mask_images(all_output_masks, all_label_masks, out_dir, epoch)
+    save_mask_images(all_output_masks, all_label_masks, out_dir, epoch, test_IDs)
 
     dice = (2 * tp) / (2 * tp + fp + fn)
     accuracy = (tp + tn) / (fp + fn + tp + tn)
@@ -200,16 +200,16 @@ def evaluate(model, test_iterator, num_batches, use_patches, epoch, out_dir):
     return dice, accuracy, precision, recall
 
 
-def save_mask_images(pred_masks, lbl_masks, out_dir, epoch):
+def save_mask_images(pred_masks, lbl_masks, out_dir, epoch, test_IDs):
 
     pred_masks = np.concatenate(pred_masks)
     lbl_masks = np.concatenate(lbl_masks)
 
-    for i, (image, label) in enumerate(zip(pred_masks, lbl_masks)):
+    for i, image, label in zip(test_IDs, pred_masks, lbl_masks):
         pred_img = (image * 255).astype(np.uint8)
         lbl_img = (label * 255).astype(np.uint8)
 
-        directory = os.path.join(out_dir, "sample_{}".format(i))
+        directory = os.path.join(out_dir, "{}".format(i))
         if not os.path.exists(directory):
             os.makedirs(directory)
 
@@ -352,7 +352,7 @@ def main():
     model = Model(model_config.layers)
 
     logger.info("Loading and preprocessing data ...")
-    train_images, train_labels, test_images, test_labels = preprocess.read_images(config["data_dir"],
+    train_images, train_labels, test_images, test_labels, test_IDs = preprocess.read_images(config["data_dir"],
                                                                                   image_size=config["img_size"],
                                                                                   testset_ratio=0.1,
                                                                                   use_patches=config["use_patches"],
@@ -412,7 +412,7 @@ def main():
                     total_count_nonzero_mask += np.count_nonzero(mask)
             assert total_count_nonzero == total_count_nonzero_mask
 
-        dice, accuracy, precision, recall = evaluate(model, test_iterator, num_test_batches, config["use_patches"], epoch, out_dir=config["output_dir"])
+        dice, accuracy, precision, recall = evaluate(model, test_iterator, num_test_batches, config["use_patches"], epoch, config["output_dir"], test_IDs)
 
         pruned_ratio = (total_model_size - total_count_nonzero_mask) / total_model_size
         metrics.append([epoch, accuracy, dice, precision, recall, pruned_ratio])
