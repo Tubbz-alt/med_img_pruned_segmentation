@@ -2,7 +2,7 @@ import numpy as np
 from skimage.io import imread
 from skimage.color import rgb2lab, rgb2hsv
 from sklearn.feature_extraction.image import extract_patches_2d
-import os
+import os#
 import time
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from skimage.transform import resize
