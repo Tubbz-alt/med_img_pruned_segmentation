@@ -95,6 +95,7 @@ upconv9_4,
 output
 ]
 
+# list containing the name of arrays to do pruning on them.
 prune_layers = list()
 for layer in layers:
     if 'conv' in layer.name:

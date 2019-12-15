@@ -71,14 +71,20 @@ class Model(tf.keras.Model):
 
         super(Model, self).__init__()
 
-        self.layers_list = layers_list
+        self.layers_list = layers_list # the list containing keras layers sequentially
         self.loss_op = tf.keras.losses.BinaryCrossentropy()
         self.optimizer = tf.keras.optimizers.Adam(1e-4)
-        self.init_values = list()
+        self.init_values = list() # list containing values for weight initialization after each pruning step
         self.num_trainable_variables = len(self.trainable_variables)
 
     @tf.function
     def call(self, inputs):
+        """
+        takes a batch of inputs and returns the model output for this input batch.
+
+        :param inputs: a batch of input images
+        :return: model prediction for this batch
+        """
 
         prev = inputs
         temp_output_storage = dict()
@@ -93,16 +99,32 @@ class Model(tf.keras.Model):
         return prev
 
     def take_back_up(self):
+        """
+        whenever called takes a backup from the weight values at the current iteration.
+        (these values are used for weight intialization at the very  next pruning step.
+        :return: None
+        """
         var_val = [var.numpy() for var in self.trainable_variables]
         self.init_values = var_val
 
     @tf.function
     def loss(self, logits, labels):
+        """
+        loss function of the model based on the predicted logits and true labels.
 
+        :param logits: output of the network
+        :param labels: corresponding true label (ground truth) for these logits.
+        :return: scalar tensor representing the loss value.
+        """
         return tf.reduce_mean(self.loss_op(y_pred=logits, y_true=labels))
 
     def compute_mask(self, layer_to_prune, threshold):
-
+        """
+        computes a mask for each layer that has value 0 if a weight is removed (pruned) and 1 otherwise.
+        :param layer_to_prune: a list containing the name of layers(parameter matrices) to do pruning on them.
+        :param threshold: the threshold for conducting pruning.
+        :return: the mask matrix for each parameter (weight) matrix.
+        """
         masks = list()
         for var in self.trainable_variables:
             if var.name.split('/')[0] in layer_to_prune:
@@ -115,12 +137,28 @@ class Model(tf.keras.Model):
         return masks
 
     def prune_connections(self, mask__):
+        """
+        given a list of pruning masks, prunes (set to zero) the weights that are indicated as pruned by the mask.
 
+        :param mask__: a list containing binary masks for each layer indicating whether each connection(weight) is pruned or not.
+        :return: None.
+        """
         for var, value, var_mask in zip(self.trainable_variables, self.init_values, mask__):
             var.assign(np.multiply(value, var_mask))
 
 
 def train(model, train_iterator, num_steps, mask_):
+
+    """
+
+    train the model for one epoch.
+
+    :param model: an instance of the model class.
+    :param train_iterator: an iterator iterating over training images and ground truths and yielding batches of data
+    :param num_steps: number of batches in each epoch
+    :param mask_: the pruning mask at this epoch(None means no pruning has occured up to this point)
+    :return:
+    """
 
     steps_taken = 0
     if mask_ is not None:
@@ -133,7 +171,10 @@ def train(model, train_iterator, num_steps, mask_):
 
         gradients = tape.gradient(loss, model.trainable_variables)
         if mask_ is not None:
+            # The list containing the variables of teh adam optimizer (v, m)
             op_vars = model.optimizer.weights
+
+            # zero out the gradients and adam variables for the pruned parameters in this loop
             for i, (v, m, grad, msk) in enumerate(zip(op_vars[num_vars + 1:], op_vars[1:num_vars + 1], gradients, mask_)):
                 gradients[i] = tf.multiply(grad, msk)
                 v.assign(tf.multiply(v, msk))
@@ -145,7 +186,14 @@ def train(model, train_iterator, num_steps, mask_):
 
 
 def assemble_tiles(tiles, num_images):
-    """Assembles the 4 tiles/patches corresponding to an image, into a single image."""
+    """
+    Assembles the 4 tiles/patches corresponding to an image, into a single image.
+
+    :param tiles: a list containing tiles for all the test images.
+    :param num_images: the number of test images
+    :return: an array containing full test images.
+    """
+
     images = []
     for i in range(num_images):
         up = np.hstack(tiles[i * 4:i * 4 + 2])
@@ -155,6 +203,19 @@ def assemble_tiles(tiles, num_images):
 
 
 def evaluate(model, test_iterator, num_batches, use_patches, epoch, out_dir, test_IDs):
+
+    """
+    evaluates the model by calculating different metrics and saving the predictions of the model in disk.
+
+    :param model: an instance of the model
+    :param test_iterator: an iterator yielding images and labels from the test data set
+    :param num_batches: number of batches in this test set
+    :param use_patches: whether to extract patches from images or use the full image during inference
+    :param epoch: the epoch that we are doing the evaluation
+    :param out_dir: the directory to write the network predictions for each test image
+    :param test_IDs: the ID (file name) of the images being tested
+    :return:
+    """
 
     tp = tn = fp = fn = 0
     batches_processed = 0
@@ -166,6 +227,8 @@ def evaluate(model, test_iterator, num_batches, use_patches, epoch, out_dir, tes
 
         image = model.call(input_).numpy()
 
+        # the output of the network is between 0 and 1 but we need binary values
+        # so here a threshold is used to obtain the binary segmentation.
         image[image >= 0.5] = 1.0
         image[image < 0.5] = 0.0
 
@@ -201,6 +264,16 @@ def evaluate(model, test_iterator, num_batches, use_patches, epoch, out_dir, tes
 
 
 def save_mask_images(pred_masks, lbl_masks, out_dir, epoch, test_IDs):
+    """
+    saves the network predictions to disk
+
+    :param pred_masks: the predicted segmentation mask by the model
+    :param lbl_masks: the true segmentation mask
+    :param out_dir: the directory to write results
+    :param epoch: at which epoch these results are produced
+    :param test_IDs: the ID (file name) of the images being tested
+    :return: None
+    """
 
     pred_masks = np.concatenate(pred_masks)
     lbl_masks = np.concatenate(lbl_masks)
